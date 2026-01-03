@@ -223,7 +223,7 @@ def setup_scheduler():
         
         # Message de redémarrage à 1h, 9h, 15h, 21h
         for hour in [1, 9, 15, 21]:
-            trigger_startup = CronTrigger(hour=hour, minute=0, timezone=benin_tz)
+            trigger_startup = CronTrigger(hour=hour, minute=0, second=0, timezone=benin_tz)
             scheduler.add_job(
                 send_startup_message,
                 trigger=trigger_startup,
@@ -234,7 +234,7 @@ def setup_scheduler():
         
         # Rapports automatiques à 6h, 12h, 18h, 00h
         for hour in [6, 12, 18, 0]:
-            trigger_report = CronTrigger(hour=hour, minute=0, timezone=benin_tz)
+            trigger_report = CronTrigger(hour=hour, minute=0, second=0, timezone=benin_tz)
             scheduler.add_job(
                 send_session_reports,
                 trigger=trigger_report,

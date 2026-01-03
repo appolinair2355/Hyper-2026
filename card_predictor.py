@@ -98,7 +98,7 @@ class CardPredictor:
             # Déterminer le type attendu
             expects_dict = force_dict or filename in [
                 'channels_config.json', 'predictions.json', 'sequential_history.json', 
-                'smart_rules.json', 'quarantined_rules.json', 'last_report_sent.json'
+                'quarantined_rules.json', 'last_report_sent.json'
             ]
             
             # Si le fichier n'existe pas, retourner la valeur par défaut appropriée
@@ -473,7 +473,8 @@ class CardPredictor:
         self._save_all_data()
         
         logger.info(f"✅ ANALYSE TERMINÉE: {len(self.smart_rules)} règles créées")
-        logger.info(f"📋 Règles: {[f'{r['trigger']}→{r['predict']}({r['count']}x)' for r in self.smart_rules]}")
+        rules_str = [f"{r['trigger']}→{r['predict']}({r['count']}x)" for r in self.smart_rules]
+        logger.info(f"📋 Règles: {rules_str}")
         
         if chat_id and self.telegram_message_sender:
             msg, _ = self.get_inter_status()
@@ -483,21 +484,32 @@ class CardPredictor:
         """Sélectionne les 16 règles actives (4 par costume, hors quarantaine temporaire)"""
         active_rules = []
         
+        # S'assurer que quarantined_rules est un dict de dicts
+        if not isinstance(self.quarantined_rules, dict):
+            self.quarantined_rules = {}
+
         for suit in ['♠️', '❤️', '♦️', '♣️']:
             suit_rules = [r for r in self.smart_rules if r.get('predict') == suit]
-            quarantined = self.quarantined_rules.get(suit, {})
-            available = [r for r in suit_rules if['trigger'] not in quarantined]
             
-            # Si moins de 4 disponibles, libérer les règles les moins utilisées
-            if len(available) < 4 and quarantined:
-                sorted_quarantined = sorted(quarantined.items(), key=lambda x: x[1])
-                triggers_to_restore = [t for t, count in sorted_quarantined[:4 - len(available)]]
+            # Récupérer les déclencheurs en quarantaine pour ce costume
+            if suit not in self.quarantined_rules:
+                self.quarantined_rules[suit] = {}
+            
+            # Filtrer les règles qui ne sont pas en quarantaine
+            available = [r for r in suit_rules if r['trigger'] not in self.quarantined_rules[suit]]
+            
+            # Si moins de 4 disponibles, libérer les règles les moins utilisées de la quarantaine
+            if len(available) < 4 and self.quarantined_rules[suit]:
+                sorted_quarantined = sorted(self.quarantined_rules[suit].items(), key=lambda x: x[1])
+                # Libérer ce qu'il faut pour arriver à 4
+                needed = 4 - len(available)
+                to_release = sorted_quarantined[:needed]
                 
-                for trigger in triggers_to_restore:
-                    if trigger in self.quarantined_rules.get(suit, {}):
-                        del self.quarantined_rules[suit][trigger]
+                for trigger, count in to_release:
+                    del self.quarantined_rules[suit][trigger]
                 
-                available = [r for r in suit_rules if r['trigger'] not in self.quarantined_rules.get(suit, {})]
+                # Recalculer available
+                available = [r for r in suit_rules if r['trigger'] not in self.quarantined_rules[suit]]
             
             active_rules.extend(available[:4])
         

@@ -4,10 +4,14 @@ import logging
 import json
 import time
 import re
+import os
 from collections import defaultdict, deque
 from typing import Dict, Any, Optional
 import requests
 from datetime import datetime
+
+# Rate limiting tracker
+user_message_counts = {}
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -81,12 +85,11 @@ class TelegramHandlers:
         # Injection des trackers globaux
         global last_rule_index_by_suit, last_suit_predictions
         
-        # ✅ NOUVEAU CODE (corrigé)
-if CardPredictor:
-    self.card_predictor = CardPredictor(
-        telegram_message_sender=self.send_message
-    )
-
+        # Initialize card predictor
+        if CardPredictor:
+            self.card_predictor = CardPredictor(
+                telegram_message_sender=self.send_message
+            )
             
             # Transférer les trackers globaux
             self.card_predictor.last_rule_index_by_suit = last_rule_index_by_suit
@@ -164,20 +167,29 @@ if CardPredictor:
     # =================================================================
 
     def _handle_command_deploy(self, chat_id: int):
-        """Envoie le package de déploiement"""
+        """Envoie le package de déploiement (ojoooooo.zip)"""
         try:
-            zip_filename = 'pack.zip'
+            zip_filename = 'ojoooooo.zip'
+            
+            # Utilisation d'un try-except pour la commande zip
+            import subprocess
+            try:
+                # Suppression de l'ancien zip s'il existe
+                if os.path.exists(zip_filename):
+                    os.remove(zip_filename)
+                
+                # Création du nouveau zip
+                subprocess.run(['zip', '-r', zip_filename, '.', '-x', '*.log', '__pycache__/*', 'okooo.zip', 'pack.zip', 'ojoooooo.zip'], capture_output=True)
+            except Exception as zip_err:
+                logger.error(f"❌ Erreur lors de l'exécution de zip: {zip_err}")
+                self.send_message(chat_id, f"❌ Erreur système lors de la création du zip: {str(zip_err)}")
+                return
             
             if not os.path.exists(zip_filename):
-                for fallback in ['yoi.zip', 'appo.zip']:
-                    if os.path.exists(fallback):
-                        zip_filename = fallback
-                        break
-                else:
-                    self.send_message(chat_id, "❌ Fichier de déploiement (pack.zip) non trouvé!")
-                    return
+                self.send_message(chat_id, "❌ Le fichier ojoooooo.zip n'a pas pu être généré.")
+                return
 
-            self.send_message(chat_id, f"📦 **Envoi du package {zip_filename}...**")
+            self.send_message(chat_id, f"📦 **Génération et envoi du package {zip_filename}...**")
             
             url = f"{self.base_url}/sendDocument"
             with open(zip_filename, 'rb') as f:
@@ -189,10 +201,10 @@ if CardPredictor:
                 data = {
                     'chat_id': chat_id,
                     'caption': f'📦 **{zip_filename} - Package BOT**\n\n'
-                              f'✅ Mode INTER: Rotation 16 règles\n'
+                              f'✅ Mode INTER: 16 règles (rotation)\n'
                               f'✅ Écart: 3 (strict)\n'
                               f'✅ Anti-répétition: 2x\n'
-                              f'✅ Canal Pred: {PREDICTION_CHANNEL_ID}\n'
+                              f'✅ Port: 10000\n'
                               f'📊 Données: {data_count} jeux\n'
                               f'🧠 Règles: {rules_count}/16 actives',
                     'parse_mode': 'Markdown'
@@ -203,7 +215,7 @@ if CardPredictor:
                 logger.info(f"✅ {zip_filename} envoyé avec succès")
                 self.send_message(chat_id, f"✅ **{zip_filename} envoyé!**")
             else:
-                self.send_message(chat_id, f"❌ Erreur : {response.text}")
+                self.send_message(chat_id, f"❌ Erreur Telegram : {response.text}")
                     
         except Exception as e:
             logger.error(f"❌ Erreur /deploy : {e}")
@@ -554,7 +566,8 @@ if CardPredictor:
                 return
             
             # --- TRAITEMENT CANAL SOURCE ---
-            if str(chat_id) == str(self.card_predictor.target_channel_id):
+            target_id = self.card_predictor.target_channel_id
+            if target_id and str(chat_id) == str(target_id):
                 self._process_source_channel_message(message)
         
         except Exception as e:
@@ -586,23 +599,39 @@ if CardPredictor:
             # A. 🧠 COLLECTE DES DONNÉES (toujours)
             game_num = self.card_predictor.extract_game_number(text)
             if game_num:
-                # Extraction prioritaire des parenthèses
-                parent_content = self._extract_parentheses_content(text)
-                if parent_content:
-                    logger.info(f"📌 Parenthèses détectées: {parent_content}")
-                
                 self.card_predictor.collect_inter_data(game_num, text)
                 logger.debug(f"📊 Données collectées jeu {game_num}")
             
             # B. 🔍 VÉRIFICATION COMPLÈTE DE TOUTES LES PRÉDICTIONS EN ATTENTE
             self._verify_pending_predictions(text, is_edit=False)
             
-            # C. 🤖 PRÉDICTION AUTOMATIQUE (mode INTER)
-            self.card_predictor.check_and_send_automatic_predictions()
+            # C. 🤖 PRÉDICTION AUTOMATIQUE (mode INTER ou STATIQUE)
+            # Utilise should_predict pour vérifier les conditions (session, écart, matching)
+            ok, game_num, suit, is_inter = self.card_predictor.should_predict(text)
             
-            # D. 👤 PRÉDICTION MANUELLE (si besoin)
-            self._check_manual_prediction(text)
-        
+            if ok and game_num and suit:
+                # Préparer et envoyer la prédiction
+                txt = self.card_predictor.prepare_prediction_text(game_num, suit)
+                mid = self.send_message(PREDICTION_CHANNEL_ID, txt)
+                
+                if mid:
+                    trigger = self.card_predictor._last_trigger_used or '?'
+                    rule_idx = self.card_predictor._last_rule_index
+                    
+                    # Enregistrer la prédiction
+                    self.card_predictor.make_prediction(
+                        game_num, suit, mid, is_inter=is_inter,
+                        trigger_used=trigger, rule_index=rule_idx
+                    )
+                    
+                    # Mettre à jour les trackers globaux
+                    global last_suit_predictions
+                    last_suit_predictions.append(suit)
+                    
+                    logger.info(
+                        f"🤖 Prédiction envoyée: J{game_num + 2} → {suit} (trigger: {trigger})"
+                    )
+            
         except Exception as e:
             logger.error(f"❌ Erreur traitement canal source: {e}", exc_info=True)
 
