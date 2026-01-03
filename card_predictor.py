@@ -1,4 +1,4 @@
-# 1️⃣ FICHIER: card_predictor.py (CODE COMPLET)
+# card_predictor.py - VERSION COMPLET CORRIGÉE ET FINALE
 
 import re
 import logging
@@ -718,4 +718,258 @@ class CardPredictor:
     def prepare_prediction_text(self, game_number_source: int, predicted_costume: str) -> str:
         """Prépare le texte de prédiction"""
         target_game = game_number_source + 2
-        text = f"🔵{target_game}
+        text = f"🔵{target_game}🔵:{predicted_costume} statut :⏳"
+        logger.info(f"📝 Prédiction: J{game_number_source} → J{target_game}, Costume: {predicted_costume}")
+        return text
+
+    def make_prediction(self, game_number_source: int, suit: str, message_id_bot: int,
+                       is_inter: bool = False, trigger_used: Optional[str] = None):
+        """Enregistre une prédiction dans le système"""
+        target = game_number_source + 2
+        
+        # Obtenir le déclencheur
+        if not trigger_used:
+            trigger_used = self._last_trigger_used or '?'
+        
+        # Déterminer l'index de règle
+        rule_index = self._last_rule_index if is_inter else 0
+        
+        self.predictions[str(target)] = {
+            'predicted_costume': suit,
+            'status': 'pending',
+            'predicted_from': game_number_source,
+            'predicted_from_trigger': trigger_used,
+            'message_text': self.prepare_prediction_text(game_number_source, suit),
+            'message_id': message_id_bot,
+            'is_inter': is_inter,
+            'rule_index': rule_index,
+            'timestamp': time.time()
+        }
+        
+        self.last_prediction_time = time.time()
+        self.last_predicted_game_number = game_number_source
+        self.consecutive_fails = 0
+        
+        # Marquer la règle comme utilisée
+        if is_inter:
+            self._mark_rule_as_used(trigger_used, suit)
+        
+        self._save_all_data()
+        logger.info(f"🎯 Prédiction enregistrée: J{target} → {suit} (trigger: {trigger_used})")
+
+    # =================================================================
+    # QUARANTAINE ET GESTION DES RÈGLES
+    # =================================================================
+
+    def _apply_quarantine(self, prediction: Dict[str, Any]):
+        """Applique la quarantaine après un échec - 1 heure"""
+        trigger_used = prediction.get('predicted_from_trigger')
+        predicted_suit = prediction.get('predicted_costume')
+        
+        if not trigger_used or not predicted_suit:
+            return
+        
+        if predicted_suit not in self.quarantined_rules:
+            self.quarantined_rules[predicted_suit] = {}
+        
+        self.quarantined_rules[predicted_suit][trigger_used] = 1
+        
+        # Mettre à jour les règles actives
+        self.smart_rules = self._get_active_rules()
+        
+        logger.info(f"🔒 Quarantaine: {trigger_used}→{predicted_suit}")
+        self._save_all_data()
+
+    def _mark_rule_as_used(self, trigger: str, suit: str):
+        """Marque une règle comme utilisée pour ce cycle"""
+        if suit not in self.used_rules_cache:
+            self.used_rules_cache[suit] = []
+        
+        self.used_rules_cache[suit].append(trigger)
+        self.last_suit_predictions.append(suit)
+        
+        # Mettre à jour les règles actives
+        self.smart_rules = self._get_active_rules()
+        
+        self._save_all_data()
+        logger.debug(f"📝 Règle marquée comme utilisée: {trigger}→{suit}")
+
+    def _check_gap_rule(self, game_num: int) -> bool:
+        """Vérifie l'écart strict de 3 entre prédictions"""
+        if self.last_predicted_game_number == 0:
+            return True
+        return game_num >= self.last_predicted_game_number + 3
+
+    def _check_suit_repetition(self, suit: str) -> bool:
+        """Vérifie qu'on ne dépasse pas 2 répétitions consécutives"""
+        suit_list = list(self.last_suit_predictions)
+        count = suit_list.count(suit)
+        return count < 2
+
+    def _get_next_available_rule(self, suit: str) -> Tuple[Optional[Dict], Optional[int]]:
+        """Récupère la prochaine règle disponible (round-robin)"""
+        if suit not in self.last_rule_index_by_suit:
+            self.last_rule_index_by_suit[suit] = 0
+        
+        # Filtrer les règles pour ce costume
+        suit_rules = [r for r in self.smart_rules if r.get('predict') == suit]
+        
+        if len(suit_rules) < 4:
+            logger.warning(f"⚠️ Seulement {len(suit_rules)} règles pour {suit}")
+            return None, None
+        
+        # Round-robin
+        start_index = self.last_rule_index_by_suit[suit]
+        for i in range(4):
+            idx = (start_index + i) % len(suit_rules)
+            rule = suit_rules[idx]
+            trigger = rule.get('trigger')
+            
+            if trigger not in self.used_rules_cache.get(suit, []):
+                self.last_rule_index_by_suit[suit] = idx
+                return rule, idx
+        
+        logger.info(f"🔄 Toutes les règles {suit} utilisées ce cycle")
+        return None, None
+
+    # =================================================================
+    # COMMANDES ET STATUT
+    # =================================================================
+
+    def reset_all(self):
+        """Réinitialise toutes les données (sauf IDs de canaux)"""
+        saved_target = self.target_channel_id
+        saved_pred = self.prediction_channel_id
+        
+        # Réinitialiser les trackers globaux
+        global last_suit_predictions, last_rule_index_by_suit
+        last_suit_predictions.clear()
+        last_rule_index_by_suit = {'♠️': 0, '❤️': 0, '♦️': 0, '♣️': 0}
+        
+        # Réinitialiser toutes les données
+        self.predictions = {}
+        self.inter_data = []
+        self.smart_rules = []
+        self.all_time_rules = []
+        self.collected_games = set()
+        self.sequential_history = {}
+        self.quarantined_rules = {}
+        self.pending_edits = {}
+        self.last_report_sent = {}
+        self.last_prediction_time = 0
+        self.last_predicted_game_number = 0
+        self.consecutive_fails = 0
+        self.last_analysis_time = 0
+        self.single_trigger_until = 0
+        self.wait_until_next_update = 0
+        self.last_inter_update_time = 0
+        self.trigger_usage_tracker = {}
+        self.used_rules_cache = {}
+        self.last_suit_predictions.clear()
+        
+        # Restaurer les IDs
+        self.target_channel_id = saved_target
+        self.prediction_channel_id = saved_pred
+        self.is_inter_mode_active = False
+        
+        self._save_all_data()
+        logger.info("🔄 RESET COMPLET effectué")
+
+    def get_inter_status(self) -> Tuple[str, Optional[Dict]]:
+        """Retourne le statut complet du mode INTER"""
+        if not self.is_inter_mode_active:
+            msg = "❌ **MODE INTER INACTIF**\nUtilisez `/inter activate` pour activer."
+            return msg, None
+        
+        # Forcer la mise à jour des règles actives
+        self.smart_rules = self._get_active_rules()
+        
+        msg = f"🧠 **MODE INTER - ✅ ACTIF**\n\n"
+        msg += f"📊 {len(self.smart_rules)}/16 règles actives ({len(self.inter_data)} jeux)\n\n"
+        
+        # Afficher les TOP 4 par costume
+        for suit in ['♠️', '❤️', '♦️', '♣️']:
+            suit_rules = [r for r in self.smart_rules if r.get('predict') == suit]
+            
+            msg += f"**Pour prédire {suit}:**\n"
+            
+            if suit_rules:
+                for idx, rule in enumerate(suit_rules, 1):
+                    trigger = rule.get('trigger', '?')
+                    count = rule.get('count', 0)
+                    msg += f"  • {trigger} ({count}x)\n"
+            
+            # Règles en quarantaine
+            quarantined = self.quarantined_rules.get(suit, {})
+            if quarantined:
+                msg += f"  _🔒 Quarantaine: {len(quarantined)} règle(s)_\n"
+            
+            msg += "\n"
+        
+        # Info round-robin
+        msg += "🔄 **Rotation Round-Robin:**\n"
+        for suit in ['♠️', '❤️', '♦️', '♣️']:
+            next_idx = self.last_rule_index_by_suit.get(suit, 0) + 1
+            msg += f"  {suit}: Prochain TOP{next_idx}\n"
+        
+        # Boutons
+        kb = {
+            'inline_keyboard': [[
+                {'text': '🔄 Relancer Analyse', 'callback_data': 'inter_apply'},
+                {'text': '❌ Désactiver', 'callback_data': 'inter_default'}
+            ]]
+        }
+        
+        return msg, kb
+
+    def get_collect_info(self) -> str:
+        """Génère le message /collect détaillé"""
+        msg = f"🧠 **ÉTAT DU MODE INTELLIGENT**\n\n"
+        msg += f"Mode: {'✅ ACTIF' if self.is_inter_mode_active else '❌ INACTIF'}\n"
+        msg += f"Données collectées: {len(self.inter_data)} jeux\n"
+        msg += f"Règles actives: {len(self.smart_rules)}/16\n\n"
+        
+        # Grouper par costume
+        from collections import Counter
+        
+        by_result_suit = defaultdict(list)
+        for entry in self.inter_data:
+            result_suit = entry.get('result_suit', '?')
+            trigger = entry.get('declencheur', '')
+            
+            # Extraction parenthèses prioritaire
+            parent_content = self._extract_parentheses_content(trigger)
+            if parent_content:
+                trigger = parent_content[0] if isinstance(parent_content, list) else str(parent_content)
+            
+            by_result_suit[result_suit].append(trigger)
+        
+                # Afficher avec comptes
+        msg += "📊 **TOUS LES DÉCLENCHEURS:**\n\n"
+        
+        for suit in ['♠️', '❤️', '♦️', '♣️']:
+            if suit in by_result_suit:
+                triggers = by_result_suit[suit]
+                msg += f"**{suit}:** {len(triggers)} occurrences\n"
+                
+                # Compter et marquer les utilisés
+                quarantined = self.quarantined_rules.get(suit, {})
+                trigger_counts = Counter(triggers).most_common()
+                
+                for trigger, count in trigger_counts:
+                    used_count = quarantined.get(trigger, 0)
+                    if used_count > 0:
+                        msg += f"  • 🔒 {trigger} ({count}x total, {used_count}x utilisé)\n"
+                    else:
+                        msg += f"  • ✅ {trigger} ({count}x)\n"
+                
+                msg += "\n"
+        
+        if len(self.inter_data) < 3:
+            msg += f"⚠️ Minimum 3 jeux requis (actuel: {len(self.inter_data)})\n"
+        
+        return msg
+
+# Instance globale
+card_predictor = CardPredictor()
+
