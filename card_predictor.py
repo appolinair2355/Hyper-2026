@@ -1,4 +1,4 @@
-# card_predictor.py - VERSION COMPLET CORRIGÉE ET FINALE
+# 1️⃣ FICHIER: card_predictor.py (CODE COMPLET CORRIGÉ)
 
 import re
 import logging
@@ -322,6 +322,7 @@ class CardPredictor:
     # EXTRACTION ET ANALYSE
     # =================================================================
 
+    # FONCTION CRITIQUE: Extrait le contenu de TOUTES les parenthèses
     def _extract_parentheses_content(self, text: str) -> List[str]:
         """Extrait le contenu de toutes les sections de parenthèses"""
         pattern = r'\(([^)]+)\)'
@@ -354,39 +355,61 @@ class CardPredictor:
         
         return None
 
+    # FONCTION CRITIQUE CORRIGÉE: Assure un formatage STRICT et robuste
     def extract_card_details(self, content: str) -> List[Tuple[str, str]]:
-        """Extrait les détails des cartes"""
-        normalized_content = content.replace("❤️", "♥️")
-        return re.findall(r'(\d+|[AKQJ])(♠️|♥️|♦️|♣️)', normalized_content, re.IGNORECASE)
-
-    def get_first_card_info(self, message: str) -> Optional[Tuple[str, str]]:
-        """Retourne la PREMIÈRE carte du PREMIER groupe"""
-        match = re.search(r'\(([^)]*)\)', message)
-        if not match:
-            return None
+        """Extrait les détails des cartes avec formatage STRICT
+        GARANTIT le format: '9❤️' sans espace, avec le bon emoji complet"""
         
-        details = self.extract_card_details(match.group(1))
-        if details:
-            v, c = details[0]
-            if c == "♥️":
-                c = "❤️"
-            return f"{v.upper()}{c}", c
+        # Étape 1: Normaliser tous les formats d'emojis possibles
+        normalized = content.replace("♥", "❤️").replace("♥️", "❤️")
+        normalized = normalized.replace("♠", "♠️").replace("♠️", "♠️")
+        normalized = normalized.replace("♦", "♦️").replace("♦️", "♦️")
+        normalized = normalized.replace("♣", "♣️").replace("♣️", "♣️")
         
-        return None
+        # Étape 2: Supprimer les espaces qui séparent valeur et enseigne
+        normalized = normalized.replace(" ", "")
+        
+        # Étape 3: Pattern robuste pour capturer toute carte
+        # \d+ = chiffres (10, 9, etc.) | [AKQJ] = valeurs lettres
+        # (❤️|♠️|♦️|♣️) = enseigne obligatoire
+        pattern = r'(\d+|[AKQJ])(❤️|♠️|♦️|♣️)'
+        matches = re.findall(pattern, normalized, re.IGNORECASE)
+        
+        # Étape 4: Retourner avec formatage STRICT
+        formatted = []
+        for value, suit in matches:
+            formatted.append((value.upper(), suit))
+        
+        logger.debug(f"🃏 Cartes extraites: {formatted}")
+        return formatted
 
+    # FONCTION CRITIQUE CORRIGÉE: Retourne le format EXACT pour le matching
     def get_all_cards_in_first_group(self, message: str) -> List[str]:
-        """Retourne TOUTES les cartes du PREMIER groupe"""
+        """Retourne TOUTES les cartes du PREMIER groupe avec format STRICT
+        EXEMPLE: '(K♣️9❤️)' → ['K♣️', '9❤️']"""
+        
         match = re.search(r'\(([^)]*)\)', message)
         if not match:
+            logger.debug("❌ Aucun groupe de parenthèses trouvé")
             return []
         
         details = self.extract_card_details(match.group(1))
         cards = []
         for v, c in details:
-            normalized_c = "♥️" if c == "❤️" else c
-            cards.append(f"{v.upper()}{normalized_c}")
+            # FORCER le format exact: valeur + emoji (ex: '9❤️')
+            card = f"{v.upper()}{c}"
+            cards.append(card)
         
+        logger.info(f"📌 PREMIER GROUPE: {cards}")
         return cards
+
+    # FONCTION CRITIQUE CORRIGÉE: Retourne la PREMIÈRE carte au format STRICT
+    def get_first_card_info(self, message: str) -> Optional[Tuple[str, str]]:
+        """Retourne la PREMIÈRE carte du PREMIER groupe"""
+        all_cards = self.get_all_cards_in_first_group(message)
+        if all_cards:
+            return all_cards[0], all_cards[0][-2:]  # '9❤️', '❤️'
+        return None
 
     # =================================================================
     # COLLECTE DES DONNÉES
@@ -658,8 +681,9 @@ class CardPredictor:
 
     def should_predict(self, message: str) -> Tuple[bool, Optional[int], Optional[str], Optional[bool]]:
         """
-        Détermine si on doit prédire (manuel)
-        PRIORITÉ ABSOLUE au contenu entre parenthèses
+        DÉTERMINE SI ON DOIT PRÉDIRE
+        CORRIGÉ: Vérifie CHAQUE règle contre CHAQUE carte du 1er groupe
+        POSITION N'A AUCUNE IMPORTANCE
         """
         self.check_and_send_reports()
         self.check_and_update_rules()
@@ -693,16 +717,34 @@ class CardPredictor:
         parent_content = self._extract_parentheses_content(message)
         if parent_content and len(parent_content) > 0:
             first_group = parent_content[0]
-            logger.info(f"📌 Contenu parenthèses: {first_group}")
+            logger.info(f"📌 CONTENU PARENTHÈSES: {first_group}")
             
-            # Chercher dans les règles intelligentes
+            # VOIR TOUTES LES CARTES DU PREMIER GROUPE (format STRICT)
+            all_cards = self.get_all_cards_in_first_group(message)
+            logger.info(f"🃏 CARTES DU 1ER GROUPE: {all_cards}")
+            
+            # VOIR LES RÈGLES DISPONIBLES (format STRICT)
+            active_rules = self.smart_rules if self.smart_rules else []
+            logger.info(f"🎯 RÈGLES INTER ACTIVES: {[r['trigger'] for r in active_rules]}")
+            
+            # ========== LOGIQUE CRITIQUE CORRIGÉE ==========
+            # Chercher si UNE SEULE des cartes du 1er groupe MATCH UNE règle
             if self.is_inter_mode_active and self.smart_rules:
                 for rule in self.smart_rules:
-                    if rule['trigger'] in first_group:
+                    # VÉRIFICATION: la règle (ex: "9❤️") est-elle DANS les cartes ?
+                    logger.debug(f"🔍 VÉRIFIE: Règle '{rule['trigger']}' dans {all_cards}")
+                    
+                    if rule['trigger'] in all_cards:
                         predicted_suit = rule['predict']
                         self._last_trigger_used = rule['trigger']
                         self._last_rule_index = rule.get('rank', 1) - 1
+                        logger.info(f"✅ MATCH TROUVÉ: {rule['trigger']} → {predicted_suit}")
                         return True, game_number, predicted_suit, True
+                
+                # Si on arrive ici, AUCUNE règle ne match
+                logger.error("❌ AUCUNE RÈGLE NE MATCH AVEC LES CARTES DU 1ER GROUPE")
+                logger.error(f"Cartes du 1er groupe: {all_cards}")
+                logger.error(f"Règles disponibles: {[r['trigger'] for r in self.smart_rules]}")
             
             # Chercher dans les règles statiques
             if not self.is_inter_mode_active:
@@ -713,10 +755,11 @@ class CardPredictor:
                         self._last_trigger_used = card
                         return True, game_number, predicted_suit, False
         
+        logger.warning("❌ AUCUN CONTENU PARENTHÈSES VALIDE TROUVÉ")
         return False, None, None, None
 
     def prepare_prediction_text(self, game_number_source: int, predicted_costume: str) -> str:
-        """Prépare le texte de prédiction"""
+        """Prépare le texte de prédiction (CORRIGÉ - f-string terminé)"""
         target_game = game_number_source + 2
         text = f"🔵{target_game}🔵:{predicted_costume} statut :⏳"
         logger.info(f"📝 Prédiction: J{game_number_source} → J{target_game}, Costume: {predicted_costume}")
@@ -944,7 +987,7 @@ class CardPredictor:
             
             by_result_suit[result_suit].append(trigger)
         
-                # Afficher avec comptes
+        # Afficher avec comptes
         msg += "📊 **TOUS LES DÉCLENCHEURS:**\n\n"
         
         for suit in ['♠️', '❤️', '♦️', '♣️']:
@@ -972,4 +1015,3 @@ class CardPredictor:
 
 # Instance globale
 card_predictor = CardPredictor()
-
