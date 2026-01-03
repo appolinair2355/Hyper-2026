@@ -81,11 +81,12 @@ class TelegramHandlers:
         # Injection des trackers globaux
         global last_rule_index_by_suit, last_suit_predictions
         
-        if CardPredictor:
-            self.card_predictor = CardPredictor(
-                telegram_message_sender=self.send_message,
-                prediction_channel_id=PREDICTION_CHANNEL_ID
-            )
+        # ✅ NOUVEAU CODE (corrigé)
+if CardPredictor:
+    self.card_predictor = CardPredictor(
+        telegram_message_sender=self.send_message
+    )
+
             
             # Transférer les trackers globaux
             self.card_predictor.last_rule_index_by_suit = last_rule_index_by_suit
