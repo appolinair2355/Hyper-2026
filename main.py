@@ -15,6 +15,7 @@ import pytz
 # Importe la configuration et le bot
 from config import Config
 from bot import TelegramBot 
+from card_predictor import CardPredictor
 
 # Configure logging
 logging.basicConfig(
@@ -30,8 +31,13 @@ except ValueError as e:
     logger.error(f"❌ Erreur d'initialisation de la configuration: {e}")
     exit(1) 
 
+# Initialisation du moteur de prédiction
+predictor = CardPredictor()
+predictor.target_channel_id = config.TARGET_CHANNEL_ID
+predictor.prediction_channel_id = config.PREDICTION_CHANNEL_ID
+
 # 'bot' est l'instance de la classe TelegramBot
-bot = TelegramBot(config.BOT_TOKEN) 
+bot = TelegramBot(config.BOT_TOKEN, predictor) 
 
 # Initialize Flask app
 app = Flask(__name__)

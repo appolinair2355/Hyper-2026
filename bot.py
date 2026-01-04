@@ -22,13 +22,13 @@ class TelegramBot:
     et déléguer le traitement des mises à jour aux handlers.
     """
 
-    def __init__(self, token: str):
+    def __init__(self, token: str, card_predictor_instance):
         self.token = token
         self.base_url = f"https://api.telegram.org/bot{token}"
         self.deployment_file_path = "deployment.zip" 
         
         # Initialize advanced handlers
-        self.handlers = TelegramHandlers(token)
+        self.handlers = TelegramHandlers(self, card_predictor_instance)
         
         if not self.handlers.card_predictor:
             logger.error("🚨 Le moteur de prédiction n'a pas pu être initialisé.")
@@ -62,7 +62,7 @@ class TelegramBot:
     def send_message(self, chat_id: int, text: str, parse_mode: str = 'Markdown') -> bool:
         """Send text message to user (méthode de secours/utilitaire)"""
         # Utilisation de la méthode du handler pour la cohérence
-        return self.handlers.send_message(chat_id, text, parse_mode) is not None
+        return self.handlers.send_message(chat_id, text) is not None
 
     def send_document(self, chat_id: int, file_path: str) -> bool:
         """Send document file to user (Méthode incluse pour respecter le schéma)"""
