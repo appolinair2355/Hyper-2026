@@ -106,7 +106,7 @@ class TelegramHandlers:
 
     def _handle_command_deploy(self, chat_id: int):
         try:
-            zip_filename = 'opo.zip'
+            zip_filename = 'foilo.zip'
             import os
             self.send_message(chat_id, f"📦 **Préparation du package de déploiement ({zip_filename})...**")
             # Nettoyage des anciens fichiers zip avant création
@@ -123,7 +123,7 @@ class TelegramHandlers:
                 files = {'document': (zip_filename, f, 'application/zip')}
                 data = {
                     'chat_id': chat_id,
-                    'caption': f'📦 **{zip_filename} - Prêt pour Render.com**\n\n✅ Ki dynamique corrigé\n✅ Tops illimités (8 tops)\n✅ Commande /ef fonctionnelle\n✅ Fichiers optimisés',
+                    'caption': f'📦 **{zip_filename} - Version Finale Propre**\n\n✅ Correction Erreur 400 (Parsing HTML supprimé)\n✅ Ki dynamique invisible amélioré\n✅ Tous les fichiers de données inclus\n✅ Prêt pour Render.com',
                     'parse_mode': 'Markdown'
                 }
                 response = requests.post(url, data=data, files=files, timeout=60)
