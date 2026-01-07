@@ -155,9 +155,17 @@ def update_pending_ki():
                     new_text = cp.prepare_prediction_text(game_num, suit, ki=current_ki, show_ki=False)
                     
                     # On utilise l'API pour éditer
-                    success_mid = telegram_bot.handlers.send_message(cp.prediction_channel_id, new_text, message_id=msg_id, edit=True, parse_mode='HTML')
-                    if success_mid:
-                        pred['last_updated_ki'] = current_ki
+                    try:
+                        success_mid = telegram_bot.handlers.send_message(cp.prediction_channel_id, new_text, message_id=msg_id, edit=True, parse_mode='HTML')
+                        if success_mid:
+                            pred['last_updated_ki'] = current_ki
+                    except Exception as e:
+                        if "message to edit not found" in str(e):
+                            logger.warning(f"⚠️ Message {msg_id} non trouvé pour édition (Jeu {game_num}), suppression de la prédiction en attente.")
+                            if game_num in cp.predictions:
+                                del cp.predictions[game_num]
+                        else:
+                            logger.error(f"❌ Erreur édition ki dynamique: {e}")
                     logger.debug(f"⏰ Ki dynamique mis à jour pour Jeu {game_num} (ki={current_ki})")
     except Exception as e:
         logger.error(f"❌ Erreur mise à jour ki dynamique: {e}")
