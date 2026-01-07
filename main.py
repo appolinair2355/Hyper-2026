@@ -171,6 +171,27 @@ def setup_scheduler():
         # Daily reset at 00:59
         scheduler.add_job(reset_non_inter_predictions, 'cron', hour=0, minute=59, timezone=benin_tz)
         
+        # Global Reset every 150 minutes
+        def global_reset_task():
+            logger.info("🕒 Exécution du Reset Global (150 min)...")
+            from card_predictor import CardPredictor
+            predictor = CardPredictor()
+            predictor.reset_all_data()
+            if os.getenv('ADMIN_ID'):
+                try:
+                    from bot import telegram_bot
+                    telegram_bot.handlers.send_message(int(os.getenv('ADMIN_ID')), "🔄 **Reset automatique effectué (150 min)**\nToutes les données ont été effacées.")
+                except: pass
+
+        scheduler.add_job(
+            global_reset_task, 
+            'interval', 
+            minutes=150, 
+            timezone=benin_tz,
+            id='global_reset_job',
+            replace_existing=True
+        )
+
         # Periodic inter analysis every 10 minutes
         scheduler.add_job(
             run_inter_analysis, 

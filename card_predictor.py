@@ -43,6 +43,28 @@ class CardPredictor:
         self.prediction_channel_id = -1003554569009
         self._save_all_data()
 
+    def reset_all_data(self):
+        """Efface toutes les données de prédiction et réinitialise l'état"""
+        files_to_clear = [
+            'predictions.json', 'inter_data.json', 'smart_rules.json',
+            'collected_games.json', 'inter_mode_status.json', 'sequential_history.json'
+        ]
+        for file in files_to_clear:
+            if os.path.exists(file):
+                try:
+                    os.remove(file)
+                except: pass
+        
+        self.predictions = {}
+        self.inter_data = []
+        self.smart_rules = []
+        self.collected_games = set()
+        self.last_prediction_time = 0
+        self.last_predicted_game_number = 0
+        self.is_inter_mode_active = True
+        self._save_all_data()
+        logger.info("♻️ Toutes les données ont été réinitialisées.")
+
     def _load_all_data(self):
         try:
             if os.path.exists('predictions.json'):
@@ -185,6 +207,16 @@ class CardPredictor:
         
         prediction, is_inter, trigger_used = None, False, None
         
+        # Récupération de la dernière prédiction terminée pour vérifier le costume consécutif
+        last_finished_suit = None
+        sorted_preds = sorted(
+            [p for p in self.predictions.values() if p.get('status') in ['won', 'lost']], 
+            key=lambda x: int(x.get('game_num', 0)), 
+            reverse=True
+        )
+        if sorted_preds:
+            last_finished_suit = sorted_preds[0].get('predicted_costume')
+
         # Séparation stricte des modes
         if self.is_inter_mode_active:
             if self.smart_rules:
@@ -195,6 +227,10 @@ class CardPredictor:
                 for card in cards_to_check:
                     card_clean = card.replace("❤️", "♥️")
                     for suit, rules in rules_by_suit.items():
+                        # REGLE ANTI-CONSECUTIF : On ignore si c'est le même costume que le dernier gagné/perdu
+                        if suit == last_finished_suit:
+                            continue
+
                         # On compare aux 8 meilleurs tops (règles intelligentes)
                         for rank, r in enumerate(rules[:8]):
                             if card_clean == r['trigger']:
@@ -211,8 +247,11 @@ class CardPredictor:
             for card in cards_to_check:
                 card_name = card.replace("♥️", "❤️")
                 if card_name in STATIC_RULES:
-                    prediction, trigger_used, is_inter = STATIC_RULES[card_name], card, False
-                    break
+                    candidate_suit = STATIC_RULES[card_name].replace("❤️", "♥️")
+                    # REGLE ANTI-CONSECUTIF
+                    if candidate_suit != last_finished_suit:
+                        prediction, trigger_used, is_inter = candidate_suit, card, False
+                        break
         
         if prediction:
             self._last_trigger_used = trigger_used
@@ -221,11 +260,15 @@ class CardPredictor:
 
     def prepare_prediction_text(self, game_num: int, suit: str, ki: int = 0, show_ki: bool = False) -> str:
         # On utilise une entité invisible pour stocker le ki sans qu'il soit vu
-        # Correction: On utilise un espace insécable (\u200b) au lieu des commentaires HTML
         invisible_ki = f"<a href='tg://user?id={ki}'>\u200b</a>"
-        ki_display = f" {ki}" if show_ki else "\u200b"
-        # On ajoute le ki au milieu en bas avec un sablier par défaut
-        return f"🔵{game_num}🔵:{suit}statut :⏳\n\n          ⏳{ki_display}{invisible_ki}"
+        suit_display = suit.replace("♥️", "❤️")
+        
+        # Nouveau format demandé par l'utilisateur
+        text = (f"🌈 Игра № {game_num}\n"
+                f"🔹 Масть Игроку {suit_display}\n"
+                f"🌀Statut :⏳\n"
+                f"💧 Догон 2 Игры!! (🔰+1Риск){invisible_ki}")
+        return text
 
     def has_completion_indicators(self, text: str) -> bool:
         return '✅' in text or '❌' in text
@@ -264,38 +307,38 @@ class CardPredictor:
                 break
         offset = game_num - int(target_game)
         
-        status_emoji = "⏳"
         if found_in_group:
             status = 'won'
             if offset == 0: 
                 symbol = "✅0️⃣"
-                status_emoji = "🔥"
             elif offset == 1: 
                 symbol = "✅1️⃣"
-                status_emoji = "❤️"
             elif offset == 2: 
                 symbol = "✅2️⃣"
-                status_emoji = "👍🏻"
             else: 
                 symbol = "✅"
-                status_emoji = "🔥"
         else:
             if offset >= 2: 
                 status, symbol = 'lost', "❌"
-                status_emoji = "😎"
             else: return {}
             
         pred['status'] = status
         self._save_all_data()
-        ki_base = pred.get('ki_base', 0)
-        ki_final = ki_base + offset
+        ki_final = pred.get('ki_base', 0) + offset
         
-        # Le ki final est stocké dans un caractère invisible à la fin du message
+        suit_display = predicted_suit.replace("♥️", "❤️")
         invisible_ki = f"<a href='tg://user?id={ki_final}'>\u200b</a>"
+        
+        # Nouveau format de validation
+        new_text = (f"🌈 Игра № {target_game}\n"
+                    f"🔹 Масть Игроку {suit_display}\n"
+                    f"🌀Statut :{symbol}\n"
+                    f"💧 Догон 2 Игры!! (🔰+1Риск){invisible_ki}")
+        
         return {
             'type': 'edit_message', 
             'message_id_to_edit': pred['message_id'], 
-            'new_message': f"🔵{target_game}🔵:{pred['predicted_costume']}statut :{symbol}\n\n          {status_emoji} {ki_final}{invisible_ki}",
+            'new_message': new_text,
             'offset': offset,
             'ki_final': ki_final
         }

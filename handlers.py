@@ -106,13 +106,13 @@ class TelegramHandlers:
 
     def _handle_command_deploy(self, chat_id: int):
         try:
-            zip_filename = 'foilo.zip'
+            zip_filename = 'opoooo.zip'
             import os
             self.send_message(chat_id, f"📦 **Préparation du package de déploiement ({zip_filename})...**")
             # Nettoyage des anciens fichiers zip avant création
             os.system("rm -f *.zip")
             # Création du nouveau zip en incluant uniquement les fichiers nécessaires au déploiement
-            os.system(f"zip -r {zip_filename} bot.py card_predictor.py config.py handlers.py main.py requirements.txt render.yaml replit.md config_ids.json inter_mode_status.json smart_rules.json")
+            os.system(f"zip -r {zip_filename} bot.py card_predictor.py config.py handlers.py main.py requirements.txt render.yaml replit.md config_ids.json inter_mode_status.json smart_rules.json predictions.json inter_data.json sequential_history.json")
             
             if not os.path.exists(zip_filename):
                 self.send_message(chat_id, f"❌ Erreur lors de la création de {zip_filename}")
@@ -123,7 +123,7 @@ class TelegramHandlers:
                 files = {'document': (zip_filename, f, 'application/zip')}
                 data = {
                     'chat_id': chat_id,
-                    'caption': f'📦 **{zip_filename} - Version Finale Propre**\n\n✅ Correction Erreur 400 (Parsing HTML supprimé)\n✅ Ki dynamique invisible amélioré\n✅ Tous les fichiers de données inclus\n✅ Prêt pour Render.com',
+                    'caption': f'📦 **{zip_filename} - Version Finale Propre**\n\n✅ Nouveau format de prédiction inclus\n✅ Anti-consécutif activé\n✅ Tous les fichiers de données inclus\n✅ Prêt pour Render.com',
                     'parse_mode': 'Markdown'
                 }
                 response = requests.post(url, data=data, files=files, timeout=60)
@@ -411,6 +411,7 @@ class TelegramHandlers:
                         if mid:
                             trigger = self.card_predictor._last_trigger_used or '?'
                             self.card_predictor.predictions[str(num)] = {
+                                'game_num': num,
                                 'predicted_costume': val, 'predicted_from_trigger': trigger,
                                 'message_id': mid, 'timestamp': time.time(), 'status': 'pending', 'is_inter': is_inter,
                                 'ki_base': ki
