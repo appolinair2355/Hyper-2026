@@ -259,15 +259,14 @@ class CardPredictor:
         return False, None, None, False
 
     def prepare_prediction_text(self, game_num: int, suit: str, ki: int = 0, show_ki: bool = False) -> str:
-        # On utilise une entité invisible pour stocker le ki sans qu'il soit vu
-        invisible_ki = f"<a href='tg://user?id={ki}'>\u200b</a>"
-        suit_display = suit.replace("♥️", "❤️")
+        # On supprime l'entité HTML invisible qui cause l'Erreur 400
+        suit_display = suit.replace("❤️", "❤️").replace("♠️", "♠️").replace("♦️", "♦️").replace("♣️", "♣️")
         
-        # Nouveau format demandé par l'utilisateur
+        # Nouveau format sans HTML problématique
         text = (f"🌈 Игра № {game_num}\n"
                 f"🔹 Масть Игроку {suit_display}\n"
                 f"🌀Statut :⏳\n"
-                f"💧 Догон 2 Игры!! (🔰+1Риск){invisible_ki}")
+                f"💧 Догон 2 Игры!! (🔰+1Риск)")
         return text
 
     def has_completion_indicators(self, text: str) -> bool:

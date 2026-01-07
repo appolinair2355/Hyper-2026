@@ -135,40 +135,47 @@ def update_pending_ki():
             cp = telegram_bot.handlers.card_predictor
             now = datetime.now(pytz.timezone('Africa/Porto-Novo'))
             
+            # On utilise list(predictions.items()) pour pouvoir supprimer des éléments pendant l'itération
             for game_num, pred in list(cp.predictions.items()):
                 if pred.get('status') == 'pending':
-                    msg_id = pred['message_id']
+                    msg_id = pred.get('message_id')
+                    if not msg_id:
+                        continue
+                        
                     suit = pred['predicted_costume']
                     ki_base = pred.get('ki_base', 0)
-                    
-                    # Le ki actuel est le temps écoulé depuis la prédiction (en minutes) + ki_base
                     start_time = pred.get('timestamp', time.time())
                     elapsed_min = int((time.time() - start_time) / 60)
                     current_ki = ki_base + elapsed_min
                     
-                    # On ne met à jour que si le ki a changé pour éviter l'erreur "message is not modified"
                     if pred.get('last_updated_ki') == current_ki:
                         continue
                     
-                    # Mise à jour du message (ki toujours masqué dans le texte, mais stocké dans l'entité invisible)
-                    # On ne l'affiche visiblement que lors de la validation (statut won/lost)
                     new_text = cp.prepare_prediction_text(game_num, suit, ki=current_ki, show_ki=False)
                     
-                    # On utilise l'API pour éditer
                     try:
-                        success_mid = telegram_bot.handlers.send_message(cp.prediction_channel_id, new_text, message_id=msg_id, edit=True, parse_mode='HTML')
+                        # Utilisation directe du bot_instance pour plus de contrôle
+                        success_mid = telegram_bot.handlers.send_message(
+                            cp.prediction_channel_id, 
+                            new_text, 
+                            message_id=msg_id, 
+                            edit=True, 
+                            parse_mode='HTML'
+                        )
                         if success_mid:
                             pred['last_updated_ki'] = current_ki
                     except Exception as e:
-                        if "message to edit not found" in str(e):
-                            logger.warning(f"⚠️ Message {msg_id} non trouvé pour édition (Jeu {game_num}), suppression de la prédiction en attente.")
+                        # Capture plus précise de l'erreur Telegram
+                        error_str = str(e).lower()
+                        if "message to edit not found" in error_str or "message can't be edited" in error_str:
+                            logger.warning(f"⚠️ Message {msg_id} (Jeu {game_num}) introuvable ou non éditable. Suppression.")
                             if game_num in cp.predictions:
                                 del cp.predictions[game_num]
                         else:
-                            logger.error(f"❌ Erreur édition ki dynamique: {e}")
-                    logger.debug(f"⏰ Ki dynamique mis à jour pour Jeu {game_num} (ki={current_ki})")
+                            logger.error(f"❌ Erreur API Telegram lors de l'édition: {e}")
+            cp._save_all_data()
     except Exception as e:
-        logger.error(f"❌ Erreur mise à jour ki dynamique: {e}")
+        logger.error(f"❌ Erreur générale mise à jour ki dynamique: {e}")
 
 def setup_scheduler():
     """Configure the background scheduler for tasks"""
